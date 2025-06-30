@@ -1,0 +1,44 @@
+{
+	"name": "@wfp99/async-lru-cache",
+	"version": "1.0.0",
+	"description": "A simple memory cache using the LRU algorithm and supporting asynchronous data access.",
+	"keywords": [
+		"cache",
+		"LRU",
+		"async",
+		"TypeScript",
+		"node.js"
+	],
+	"license": "MIT",
+	"author": "Wang Feng Ping <wfp@nebuis.com>",
+	"type": "commonjs",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist/",
+		"README.md",
+		"README.zh-TW.md",
+		"LICENSE"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/wfp99/async-lru-cache.git"
+	},
+	"bugs": {
+		"url": "https://github.com/wfp99/async-lru-cache/issues"
+	},
+	"homepage": "https://github.com/wfp99/async-lru-cache#readme",
+	"engines": {
+		"node": ">=14.0.0"
+	},
+	"scripts": {
+		"build": "tsc",
+		"clean": "rm -rf dist",
+		"prepublishOnly": "npm run clean && npm run build",
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"devDependencies": {
+		"@types/node": "^24.0.7",
+		"typescript": "^5.8.3"
+	}
+}
