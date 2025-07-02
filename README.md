@@ -15,6 +15,47 @@ An asynchronous LRU (Least Recently Used) memory cache that supports asynchronou
 - 🛡️ **Error Handling**: Comprehensive error handling with automatic cache cleanup on failures
 - 🧹 **Complete Clearing**: Support for clearing all cache entries at once
 
+## Why AsyncLRUCache?
+
+### The Problem
+Traditional caching solutions often struggle with asynchronous operations:
+- **Race Conditions**: Multiple concurrent requests for the same resource can trigger duplicate expensive operations
+- **Memory Leaks**: Failed operations may leave stale entries in cache without proper cleanup
+- **Complex State Management**: Coordinating cache updates with external persistence layers becomes error-prone
+- **External Dependencies**: Many caching solutions require external services (Redis, Memcached) adding infrastructure complexity, network latency, and deployment overhead
+
+### The Solution
+AsyncLRUCache addresses these challenges by providing:
+- **Smart Request Merging**: Multiple concurrent GET calls for the same key automatically share a single loader execution
+- **Automatic Error Recovery**: Failed operations are automatically cleaned up, preventing memory leaks and stale data
+- **Operation Serialization**: PUT operations for the same key are queued and executed sequentially, ensuring data consistency
+- **Zero External Dependencies**: Pure in-memory solution eliminates the need for external caching services, reducing infrastructure complexity, setup overhead, and network latency while increasing reliability and performance
+
+### When to Use
+AsyncLRUCache is perfect for scenarios involving:
+- **API Response Caching**: Cache expensive HTTP requests with automatic deduplication
+- **Database Query Results**: Reduce database load while maintaining data consistency
+- **Computed Values**: Cache expensive calculations with built-in invalidation
+- **File System Operations**: Cache file reads/writes with persistence hooks
+- **Microservices Communication**: Reduce inter-service calls with intelligent caching
+
+### Why Choose In-Memory Over External Cache Services?
+
+**Simplicity & Performance**
+- **No Setup Required**: Install and use immediately without configuring external services
+- **Zero Network Latency**: Direct memory access provides microsecond response times
+- **Reduced Infrastructure**: Eliminate cache servers, reducing operational complexity and costs
+
+**Reliability & Predictability**
+- **No Network Dependencies**: Cache operations never fail due to network issues
+- **Consistent Performance**: No variable network latency affecting cache performance
+- **Simplified Deployment**: Deploy as part of your application without managing separate cache infrastructure
+
+**Development Efficiency**
+- **Instant Development**: Start coding immediately without setting up Redis, Memcached, etc.
+- **Easy Testing**: Unit tests run without external service dependencies
+- **Simplified Debugging**: Cache behavior is predictable and traceable within your application process
+
 ## Installation
 
 ```bash
