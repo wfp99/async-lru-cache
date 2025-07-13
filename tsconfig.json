@@ -4,6 +4,9 @@
 		"lib": [
 			"es2016"
 		],
+		"types": [
+			"node"
+		],
 		"module": "commonjs",
 		"rootDir": "./src",
 		"moduleResolution": "node",
