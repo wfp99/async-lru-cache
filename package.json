@@ -1,6 +1,6 @@
 {
 	"name": "@wfp99/async-lru-cache",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "A simple memory cache using the LRU algorithm and supporting asynchronous data access.",
 	"keywords": [
 		"cache",
