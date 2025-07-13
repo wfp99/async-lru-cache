@@ -12,6 +12,7 @@ An asynchronous LRU (Least Recently Used) memory cache that supports asynchronou
 - 🔄 **Automatic Merging**: Automatically merges concurrent GET requests for the same key
 - 📝 **Serialized Writes**: Serializes PUT operations for the same key to ensure execution order
 - 🗑️ **LRU Eviction**: Implements LRU algorithm to automatically remove least recently used items
+- ⏰ **TTL Support**: Automatic expiration of cache entries with configurable Time To Live
 - 🛡️ **Error Handling**: Comprehensive error handling with automatic cache cleanup on failures
 - 🧹 **Complete Clearing**: Support for clearing all cache entries at once
 
@@ -104,6 +105,59 @@ try {
     // Failed items are automatically removed from cache
 }
 ```
+
+### TTL (Time To Live) Support
+
+AsyncLRUCache supports automatic expiration of cache entries using TTL (Time To Live):
+
+```typescript
+import { AsyncLRUCache } from '@wfp99/async-lru-cache';
+
+// Create cache with TTL support
+const cache = new AsyncLRUCache({
+    capacity: 100,
+    defaultTtlMs: 5000,        // Default TTL of 5 seconds
+    cleanupIntervalMs: 10000   // Cleanup expired entries every 10 seconds
+});
+
+// Use default TTL
+const data1 = await cache.get('key1', async () => {
+    return await fetchData();
+});
+
+// Override TTL for specific entries
+const data2 = await cache.get('key2', async () => {
+    return await fetchCriticalData();
+}, 30000); // 30 seconds TTL
+
+// Put with custom TTL
+await cache.put('key3', value, async (key, val) => {
+    await saveToDb(key, val);
+}, 60000); // 1 minute TTL
+
+// Manual cleanup of expired entries
+cache.cleanupExpired();
+
+// Check if key exists and is not expired
+if (cache.has('key1')) {
+    console.log('Key exists and is valid');
+}
+
+// Get cache size
+console.log('Current cache size:', cache.size());
+
+// Destroy cache (stops cleanup timer and clears all data)
+cache.destroy();
+```
+
+#### TTL Configuration Options
+
+- **`defaultTtlMs`**: Default TTL for all cache entries (optional)
+- **`cleanupIntervalMs`**: Automatic cleanup interval for expired entries (optional)
+- Individual `get()` and `put()` methods accept TTL overrides
+- Expired entries are automatically removed during normal operations
+- Call `cleanupExpired()` for manual cleanup
+- Call `destroy()` to stop timers and prevent memory leaks
 
 ### Advanced Usage
 

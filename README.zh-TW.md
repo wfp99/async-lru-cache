@@ -8,6 +8,7 @@
 - 🔄 **自動合併**：自動合併相同 key 的並發 GET 請求
 - 📝 **序列化寫入**：序列化同一 key 的 PUT 操作，確保順序執行
 - 🗑️ **LRU 淘汰策略**：實現 LRU 演算法，自動移除最久未使用的項目
+- ⏰ **TTL 支援**：支援可配置的生存時間（Time To Live），自動過期快取項目
 - 🛡️ **錯誤處理**：完善的錯誤處理機制，載入或保存失敗時自動清理快取
 - 🧹 **完整清除**：支援一次性清除所有快取項目
 
@@ -117,6 +118,59 @@ await cache.put(`user:${userId}`, updatedUser, async (key, value) => {
     await database.users.update(userId, value);
 });
 ```
+
+### TTL（生存時間）支援
+
+AsyncLRUCache 支援使用 TTL（Time To Live）自動過期快取項目：
+
+```typescript
+import { AsyncLRUCache } from '@wfp99/async-lru-cache';
+
+// 建立支援 TTL 的快取
+const cache = new AsyncLRUCache({
+    capacity: 100,
+    defaultTtlMs: 5000,        // 預設 TTL 為 5 秒
+    cleanupIntervalMs: 10000   // 每 10 秒清理過期項目
+});
+
+// 使用預設 TTL
+const data1 = await cache.get('key1', async () => {
+    return await fetchData();
+});
+
+// 為特定項目覆寫 TTL
+const data2 = await cache.get('key2', async () => {
+    return await fetchCriticalData();
+}, 30000); // 30 秒 TTL
+
+// 使用自訂 TTL 進行 Put 操作
+await cache.put('key3', value, async (key, val) => {
+    await saveToDb(key, val);
+}, 60000); // 1 分鐘 TTL
+
+// 手動清理過期項目
+cache.cleanupExpired();
+
+// 檢查 key 是否存在且未過期
+if (cache.has('key1')) {
+    console.log('Key 存在且有效');
+}
+
+// 取得快取大小
+console.log('目前快取大小:', cache.size());
+
+// 銷毀快取（停止清理計時器並清除所有資料）
+cache.destroy();
+```
+
+#### TTL 配置選項
+
+- **`defaultTtlMs`**：所有快取項目的預設 TTL（可選）
+- **`cleanupIntervalMs`**：過期項目的自動清理間隔（可選）
+- 個別的 `get()` 和 `put()` 方法接受 TTL 覆寫
+- 過期項目在正常操作期間會自動移除
+- 呼叫 `cleanupExpired()` 進行手動清理
+- 呼叫 `destroy()` 停止計時器並防止記憶體洩漏
 
 ### 快取管理
 
