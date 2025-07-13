@@ -34,14 +34,35 @@ class Node<K, V>
 	public value: Promise<V>;
 
 	/**
+	 * The timestamp when this node expires (in milliseconds).
+	 * If null, the node never expires.
+	 */
+	public expiresAt: number | null = null;
+
+	/**
 	 * Creates a new Node instance.
 	 * @param key - The key associated with this node.
 	 * @param value - A Promise that resolves to the value of this node.
+	 * @param ttlMs - Time to live in milliseconds. If provided, sets the expiration time.
 	 */
-	constructor(key: K, value: Promise<V>)
+	constructor(key: K, value: Promise<V>, ttlMs?: number)
 	{
 		this.key = key;
 		this.value = value;
+
+		if (ttlMs !== undefined && ttlMs > 0)
+		{
+			this.expiresAt = Date.now() + ttlMs;
+		}
+	}
+
+	/**
+	 * Checks if this node has expired.
+	 * @returns True if the node has expired, false otherwise.
+	 */
+	public isExpired(): boolean
+	{
+		return this.expiresAt !== null && Date.now() > this.expiresAt;
 	}
 }
 
@@ -55,6 +76,20 @@ export interface AsyncLRUCacheOption
 	 * Must not be less than 10.
 	 */
 	capacity: number;
+
+	/**
+	 * Default time to live for cache entries in milliseconds.
+	 * If not specified, entries will not expire automatically.
+	 * Individual entries can override this value.
+	 */
+	defaultTtlMs?: number;
+
+	/**
+	 * Interval in milliseconds for automatic cleanup of expired entries.
+	 * If not specified, cleanup will only happen during normal operations.
+	 * Setting this enables periodic background cleanup.
+	 */
+	cleanupIntervalMs?: number;
 }
 
 /**
@@ -63,6 +98,7 @@ export interface AsyncLRUCacheOption
  * - Supports asynchronous savers for data persistence.
  * - Automatically merges concurrent requests (get) and serializes writes (put).
  * - Implements LRU eviction strategy.
+ * - Supports TTL (Time To Live) for automatic expiration of entries.
  */
 export class AsyncLRUCache<K, V>
 {
@@ -70,6 +106,11 @@ export class AsyncLRUCache<K, V>
 	 * Maximum capacity of the cache.
 	 */
 	private readonly capacity: number;
+
+	/**
+	 * Default TTL for cache entries in milliseconds.
+	 */
+	private readonly defaultTtlMs?: number;
 
 	/**
 	 * Map for storing cache entries. The key is the cache key, and the value is the Node.
@@ -87,6 +128,11 @@ export class AsyncLRUCache<K, V>
 	private tail: Node<K, V> | null = null;
 
 	/**
+	 * Timer ID for periodic cleanup of expired entries.
+	 */
+	private cleanupTimer?: NodeJS.Timeout;
+
+	/**
 	 * Creates an instance of AsyncLRUCache with the specified options.
 	 * @param option - The configuration options for the cache.
 	 * @throws {Error} Throws an error if the provided capacity is less than 10.
@@ -97,6 +143,61 @@ export class AsyncLRUCache<K, V>
 			throw new Error("Capacity must be at least 10.");
 
 		this.capacity = option.capacity;
+		this.defaultTtlMs = option.defaultTtlMs;
+
+		// Setup periodic cleanup if specified
+		if (option.cleanupIntervalMs && option.cleanupIntervalMs > 0)
+		{
+			this.cleanupTimer = setInterval(() => {
+				this._cleanupExpired();
+			}, option.cleanupIntervalMs);
+		}
+	}
+
+	/**
+	 * Cleans up expired entries from the cache.
+	 * This method removes all nodes that have exceeded their TTL.
+	 */
+	private _cleanupExpired(): void
+	{
+		const expiredKeys: K[] = [];
+
+		// Collect expired keys
+		for (const [key, node] of this.dataMap)
+		{
+			if (node.isExpired())
+			{
+				expiredKeys.push(key);
+			}
+		}
+
+		// Remove expired entries
+		for (const key of expiredKeys)
+		{
+			const node = this.dataMap.get(key);
+			if (node)
+			{
+				this.dataMap.delete(key);
+				this._removeNode(node);
+			}
+		}
+	}
+
+	/**
+	 * Checks if a node is expired and removes it if so.
+	 * @param key - The key to check.
+	 * @param node - The node to check.
+	 * @returns True if the node was expired and removed, false otherwise.
+	 */
+	private _checkAndRemoveExpired(key: K, node: Node<K, V>): boolean
+	{
+		if (node.isExpired())
+		{
+			this.dataMap.delete(key);
+			this._removeNode(node);
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -164,21 +265,30 @@ export class AsyncLRUCache<K, V>
 	 * Automatically merges concurrent requests for the same key.
 	 * @param key - Cache key.
 	 * @param loader - Asynchronous loader function to execute on cache miss.
+	 * @param ttlMs - Optional TTL override for this entry in milliseconds.
 	 * @returns A Promise that resolves to the required data.
 	 */
-	public get(key: K, loader: () => Promise<V>): Promise<V>
+	public get(key: K, loader: () => Promise<V>, ttlMs?: number): Promise<V>
 	{
 		const node = this.dataMap.get(key);
 
 		if (node)
 		{
-			this._moveToHead(node);
-
-			return node.value;
+			// Check if the node has expired
+			if (this._checkAndRemoveExpired(key, node))
+			{
+				// Node was expired and removed, proceed to load fresh data
+			}
+			else
+			{
+				this._moveToHead(node);
+				return node.value;
+			}
 		}
 
 		const loadingPromise = loader();
-		const newNode = new Node(key, loadingPromise);
+		const effectiveTtlMs = ttlMs ?? this.defaultTtlMs;
+		const newNode = new Node(key, loadingPromise, effectiveTtlMs);
 
 		this.dataMap.set(key, newNode);
 		this._addToHead(newNode);
@@ -204,9 +314,10 @@ export class AsyncLRUCache<K, V>
 	 * @param key - Cache key.
 	 * @param value - Value to cache.
 	 * @param saver - Optional asynchronous save function.
+	 * @param ttlMs - Optional TTL override for this entry in milliseconds.
 	 * @returns A Promise that resolves to the latest value after the saver operation completes.
 	 */
-	public put(key: K, value: V, saver?: (key: K, value: V) => Promise<void>): Promise<V>
+	public put(key: K, value: V, saver?: (key: K, value: V) => Promise<void>, ttlMs?: number): Promise<V>
 	{
 		const lastPromise = this.dataMap.has(key) ? this.dataMap.get(key)!.value : Promise.resolve(undefined as V);
 
@@ -228,17 +339,27 @@ export class AsyncLRUCache<K, V>
 		});
 
 		let node = this.dataMap.get(key);
+		const effectiveTtlMs = ttlMs ?? this.defaultTtlMs;
 
 		if (!node)
 		{
-			node = new Node(key, saverPromise);
+			node = new Node(key, saverPromise, effectiveTtlMs);
 			this.dataMap.set(key, node);
 			this._addToHead(node);
 			this._evictIfNeeded();
 		}
 		else
 		{
+			// Update existing node with new value and TTL
 			node.value = saverPromise;
+			if (effectiveTtlMs !== undefined && effectiveTtlMs > 0)
+			{
+				node.expiresAt = Date.now() + effectiveTtlMs;
+			}
+			else
+			{
+				node.expiresAt = null;
+			}
 			this._moveToHead(node);
 		}
 
@@ -291,6 +412,7 @@ export class AsyncLRUCache<K, V>
 			node.next = null;
 			node.key = null as any;
 			node.value = Promise.resolve(undefined as V);
+			node.expiresAt = null;
 
 			// Move to the next node.
 			node = next;
@@ -298,5 +420,61 @@ export class AsyncLRUCache<K, V>
 
 		this.head = null;
 		this.tail = null;
+	}
+
+	/**
+	 * Destroys the cache instance, clearing all data and stopping any background timers.
+	 * Call this method when you no longer need the cache to prevent memory leaks.
+	 */
+	public destroy(): void
+	{
+		// Stop the cleanup timer if it exists
+		if (this.cleanupTimer)
+		{
+			clearInterval(this.cleanupTimer);
+			this.cleanupTimer = undefined;
+		}
+
+		// Clear all cache data
+		this.clear();
+	}
+
+	/**
+	 * Manually triggers cleanup of expired entries.
+	 * This is useful if you want to force cleanup without waiting for the automatic interval.
+	 */
+	public cleanupExpired(): void
+	{
+		this._cleanupExpired();
+	}
+
+	/**
+	 * Gets the current number of entries in the cache.
+	 * @returns The number of entries currently in the cache.
+	 */
+	public size(): number
+	{
+		return this.dataMap.size;
+	}
+
+	/**
+	 * Checks if a key exists in the cache and is not expired.
+	 * @param key - The key to check.
+	 * @returns True if the key exists and is not expired, false otherwise.
+	 */
+	public has(key: K): boolean
+	{
+		const node = this.dataMap.get(key);
+		if (!node)
+		{
+			return false;
+		}
+
+		if (this._checkAndRemoveExpired(key, node))
+		{
+			return false;
+		}
+
+		return true;
 	}
 }
