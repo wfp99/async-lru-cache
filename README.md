@@ -16,46 +16,17 @@ An asynchronous LRU (Least Recently Used) memory cache that supports asynchronou
 - 🛡️ **Error Handling**: Comprehensive error handling with automatic cache cleanup on failures
 - 🧹 **Complete Clearing**: Support for clearing all cache entries at once
 
-## Why AsyncLRUCache?
-
-### The Problem
-Traditional caching solutions often struggle with asynchronous operations:
-- **Race Conditions**: Multiple concurrent requests for the same resource can trigger duplicate expensive operations
-- **Memory Leaks**: Failed operations may leave stale entries in cache without proper cleanup
-- **Complex State Management**: Coordinating cache updates with external persistence layers becomes error-prone
-- **External Dependencies**: Many caching solutions require external services (Redis, Memcached) adding infrastructure complexity, network latency, and deployment overhead
-
-### The Solution
-AsyncLRUCache addresses these challenges by providing:
-- **Smart Request Merging**: Multiple concurrent GET calls for the same key automatically share a single loader execution
-- **Automatic Error Recovery**: Failed operations are automatically cleaned up, preventing memory leaks and stale data
-- **Operation Serialization**: PUT operations for the same key are queued and executed sequentially, ensuring data consistency
-- **Zero External Dependencies**: Pure in-memory solution eliminates the need for external caching services, reducing infrastructure complexity, setup overhead, and network latency while increasing reliability and performance
-
-### When to Use
-AsyncLRUCache is perfect for scenarios involving:
-- **API Response Caching**: Cache expensive HTTP requests with automatic deduplication
-- **Database Query Results**: Reduce database load while maintaining data consistency
-- **Computed Values**: Cache expensive calculations with built-in invalidation
-- **File System Operations**: Cache file reads/writes with persistence hooks
-- **Microservices Communication**: Reduce inter-service calls with intelligent caching
-
-### Why Choose In-Memory Over External Cache Services?
+## Why Choose In-Memory Over External Cache Services?
 
 **Simplicity & Performance**
-- **No Setup Required**: Install and use immediately without configuring external services
-- **Zero Network Latency**: Direct memory access provides microsecond response times
-- **Reduced Infrastructure**: Eliminate cache servers, reducing operational complexity and costs
+- No setup required - install and use immediately
+- Zero network latency - direct memory access
+- Reduced infrastructure complexity
 
-**Reliability & Predictability**
-- **No Network Dependencies**: Cache operations never fail due to network issues
-- **Consistent Performance**: No variable network latency affecting cache performance
-- **Simplified Deployment**: Deploy as part of your application without managing separate cache infrastructure
-
-**Development Efficiency**
-- **Instant Development**: Start coding immediately without setting up Redis, Memcached, etc.
-- **Easy Testing**: Unit tests run without external service dependencies
-- **Simplified Debugging**: Cache behavior is predictable and traceable within your application process
+**Reliability & Development**
+- No external dependencies or network failures
+- Simplified testing and debugging
+- Works without Redis, Memcached, or other cache servers
 
 ## Installation
 
@@ -201,24 +172,28 @@ constructor(option: AsyncLRUCacheOption)
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `capacity` | `number` | Yes | Maximum number of items allowed in cache. Must be a positive number. |
+| `defaultTtlMs` | `number` | No | Default TTL for all cache entries (optional) |
+| `cleanupIntervalMs` | `number` | No | Automatic cleanup interval for expired entries (optional) |
 
 #### Methods
 
-##### `get(key: K, loader: () => Promise<V>): Promise<V>`
+##### `get(key: K, loader: () => Promise<V>, ttlMs?: number): Promise<V>`
 
 Retrieves data from cache. If not found, uses the loader to load data.
 
 - **key**: Cache key
 - **loader**: Asynchronous loader function executed on cache miss
+- **ttlMs**: Optional TTL override for this entry
 - **Returns**: Promise that resolves to the required data
 
-##### `put(key: K, value: V, saver?: (key: K, value: V) => Promise<void>): Promise<V>`
+##### `put(key: K, value: V, saver?: (key: K, value: V) => Promise<void>, ttlMs?: number): Promise<V>`
 
 Puts a value into cache and optionally executes a saver function for persistence.
 
 - **key**: Cache key
 - **value**: Value to cache
 - **saver**: Optional asynchronous saver function
+- **ttlMs**: Optional TTL override for this entry
 - **Returns**: Promise that resolves to the latest value after saver operation completes
 
 ##### `invalidate(key: K): void`
@@ -231,11 +206,33 @@ Invalidates and removes the cache entry for the specified key.
 
 Clears all cache entries. This method removes all items from cache and manually clears node links to prevent potential memory leaks.
 
+##### `has(key: K): boolean`
+
+Checks if a key exists in cache and is not expired.
+
+- **key**: Cache key to check
+- **Returns**: True if key exists and is valid
+
+##### `size(): number`
+
+Returns the current number of items in cache.
+
+- **Returns**: Number of cached items
+
+##### `cleanupExpired(): void`
+
+Manually removes expired entries from cache.
+
+##### `destroy(): void`
+
+Destroys the cache, stops cleanup timers and clears all data.
+
 ## Concurrency Handling
 
-### GET Request Merging
+AsyncLRUCache automatically handles concurrent operations:
 
-When multiple concurrent requests fetch the same key, AsyncLRUCache automatically merges these requests, ensuring the loader function executes only once:
+- **GET Request Merging**: Multiple concurrent requests for the same key share a single loader execution
+- **PUT Operation Serialization**: Multiple PUT operations for the same key are serialized to ensure they execute in order
 
 ```typescript
 // These three concurrent requests will share the same loader execution
@@ -244,13 +241,7 @@ const [data1, data2, data3] = await Promise.all([
     cache.get('shared-key', loader),
     cache.get('shared-key', loader)
 ]);
-```
 
-### PUT Operation Serialization
-
-Multiple PUT operations for the same key are serialized to ensure they execute in order:
-
-```typescript
 // These operations will execute sequentially, even if started concurrently
 cache.put('key', 'value1', saver1);
 cache.put('key', 'value2', saver2);
@@ -284,14 +275,6 @@ const user: User = await userCache.get('user:123', async () => {
 - **Saver Failures**: If saver function fails, cache entry is also removed to ensure data consistency
 - **Operation Chain Errors**: PUT operations ignore previous operation errors, allowing new operations to proceed
 - **Error Logging**: All errors are automatically logged to console for debugging
-
-## Memory Management
-
-AsyncLRUCache provides comprehensive memory management:
-
-- **Automatic Eviction**: Automatically removes least recently used items based on capacity
-- **Manual Cleanup**: `clear()` method thoroughly cleans all node links to prevent memory leaks
-- **Error Cleanup**: Automatically cleans related cache entries when operations fail
 
 ## License
 
